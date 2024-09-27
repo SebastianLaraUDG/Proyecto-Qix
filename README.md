@@ -8,5 +8,7 @@ S - Abajo
 A - Izquierda
 D - Derecha
 
-Espacio - Activa el modo de dibujo
+J - Activa dibujo
+K - Activa dibujo rapido
 
+Escape - Salir
