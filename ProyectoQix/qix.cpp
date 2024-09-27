@@ -1,8 +1,13 @@
 #include "raylib.h"
-#include<cstdio>//sprintf
+#include <cstdio>//sprintf
+#include <cmath>//round
 
 constexpr int TAMANIO_TILE = 16;
-constexpr int FRAMES_PARA_MOVER = 10;
+
+/*
+TODO: Enemigo bordes
+*/
+
 //------------------------------------------------------------------------------------
 // Program main entry point
 //------------------------------------------------------------------------------------
@@ -27,11 +32,23 @@ public:
     static constexpr Vector2 TILE_VACIO = {0.0f,0.0f};
     static constexpr Vector2 TILE_LINEA_INCOMPLETA = {1.0f,10.0f};
     
+    // Metodos
+
+
     inline Tilemap(){
+        // Copiamos el mapa original en una variable para que al usar el GetArea (el cual implementa el flood-fill) no modifiquemos el mapa que ve el jugador
         for (int i = 0; i < ANCHO * ALTO_MAPA_JUGABLE; i++)
             copiaMapa[i] = mapa[i];
+        // Guardamos la cantidad de tiles vacios del mapa al inicio del juego
+        for (const auto& tile : mapa)
+            if (tile == 1)
+                cantidadTilesVaciosInicio++;
     }
     static void SetTile(const int&, const int&, const int&,Tilemap*,const bool&);
+    static Vector2 ObtenerTile(const int&,const int&,const Tilemap&,const bool&);
+    void Fill(const Vector2&,const int& ,const Vector2&,Tilemap&);
+    void GetArea(Tilemap& copiaTilemap, const int& nuevoTile, const Vector2& tileXcambiar, const int& posX, const int& posY, int& contador);
+    void EndureceBordes();
     
     inline void CargaTextura(const char* ruta){
         tile_sheet = LoadTexture(ruta);
@@ -44,18 +61,51 @@ public:
     }
     // Dibujar el tilemap en consola
     void Dibujar()const {
+        // Dibuja el mapa
         for (int i = 0; i < sizeof(mapa) / sizeof(mapa[0]); i++)
         {
             int posX = i % ANCHO;
             int posY = i / ALTO;
             const Rectangle rectangle = { tiles[mapa[i]].x * TAMANIO_TILE, tiles[mapa[i]].y * TAMANIO_TILE, TAMANIO_TILE, TAMANIO_TILE };
-            DrawTextureRec(tile_sheet, rectangle, { static_cast<float>(posX) * TAMANIO_TILE,static_cast<float>(posY) * TAMANIO_TILE }, WHITE);
+            DrawTextureRec(tile_sheet, rectangle, { static_cast<float>(posX) * TAMANIO_TILE,static_cast<float>(posY) * TAMANIO_TILE }, LIGHTGRAY);
+        }
+
+        char buffer[20]{};
+
+        // Dibuja el numero de tiles necesarios para ganar(40% de los vacios iniciales)
+        sprintf(buffer, "Debes llenar %d Tiles para GANAR", static_cast<int>(cantidadTilesVaciosInicio * 0.6f));
+        DrawText(buffer, 400, 20, 22, BLUE);
+
+        sprintf(buffer,"%hu / %d llenados para ganar",cantidadTilesRellenados,static_cast<int>(cantidadTilesVaciosInicio * 0.6f));
+        DrawText(buffer, 400,70,22,WHITE);
+
+        // Dibuja el numero de tiles vacios INICIALES
+        sprintf(buffer, "Tiles VACIOS iniciales: %d", cantidadTilesVaciosInicio);
+        DrawText(buffer, 400, 50, 22, RED);
+        
+        // Dibuja el numero de tiles RELLENADOS
+        sprintf(buffer, "No. Tiles rellenados: %hu", cantidadTilesRellenados);
+        DrawText(buffer, 400, 100, 22, GREEN);
+    }
+
+    /// @brief Revisa si la cantidad de tiles vacios en el mapa es menor a 40% y termina el juego
+    /// @param gameOver La variable que determina el fin del bucle en el main
+    /// @param victoria La variable para mostrar el texto de victoria o derrota
+    void RevisaMapa(bool& gameOver,bool& victoria) {
+        unsigned short contadorTilesVaciosActuales = 0;
+        // Para cada tile, si es vacio o borde no-fijo (ignorando los bordes originales), lo contamos
+        for (int i = ANCHO; i < ANCHO * ALTO_MAPA_JUGABLE - ANCHO - 1; i++) {
+            if((mapa[i] == 3 || mapa[i] == 1) && i % ANCHO != 0)
+            contadorTilesVaciosActuales++;
+        }
+        cantidadTilesRellenados = cantidadTilesVaciosInicio - contadorTilesVaciosActuales;
+
+        // El jugador debe ganar si el porcentaje de tiles vacíos es menor al 40% de los tiles vacíos iniciales.
+        if (contadorTilesVaciosActuales <= std::round(cantidadTilesVaciosInicio * 0.4f)){ // Redondeamos
+            gameOver = true;
+            victoria = true;
         }
     }
-    static Vector2 ObtenerTile(const int&,const int&,const Tilemap&,const bool&);
-    void Fill(const Vector2&,const int& ,const Vector2&,Tilemap&);
-    void GetArea(Tilemap& copiaTilemap, const int& nuevoTile, const Vector2& tileXcambiar, const int& posX, const int& posY, int& contador);
-    void EndureceBordes();
     //Borramos la textura en el destructor
     ~Tilemap() {UnloadTexture(tile_sheet); }
 
@@ -64,12 +114,14 @@ public:
     static int mapa[ANCHO * ALTO_MAPA_JUGABLE]; // Actualiza segun el ANCHO * ALTO_MAPA_JUGABLE
     int copiaMapa[ANCHO * ALTO_MAPA_JUGABLE]; // Actualiza segun el ANCHO * ALTO_MAPA_JUGABLE
     Texture2D tile_sheet;
+    unsigned short cantidadTilesVaciosInicio = 0;
+    unsigned short cantidadTilesRellenados = 0;
 };
 
 Vector2 Tilemap::tiles[] = {/*La imagen de los assets tiene 49 tiles de largo y 22 de alto*/
     {13.0f,16.0f}, {0.0f,0.0f},   /* 0 es el borde, 1 es el vacio*/
-    {15.0f,6.0f},//2 es el relleno rojo
-    {1.0f,10.0f} //3 es el borde sin fijar
+    {15.0f,6.0f},//2 es el relleno 
+    {1.0f,10.0f} //3 es el borde sin fijar (el del modo de dibujado)
 };
 
 int Tilemap::mapa[] = {   /// Puede aumentarse
@@ -144,7 +196,7 @@ void Tilemap::SetTile(const int& tileNuevo, const int& x, const int& y,Tilemap* 
         map->mapa[indice] = tileNuevo;
 }
 
-/// @brief 
+/// @brief Flood-Fill
 /// @param tilePorCambiar El tile considerado como vacio, es el negro comunmente
 /// @param nuevoTile El tile que rellenara los espacios vacios
 /// @param pos Coordenada de inicio del Fill
@@ -207,9 +259,13 @@ bool dibujando = false;
 bool debeHacerFloodFill = false;
 Vector2 posInicioDibujando;
 Direcciones ultimaDireccion = COMODIN; //TODO: Tal vez el nombre deberia ser "direccionDeMovimiento", seria mas correcto
+const unsigned short FRAMES_PARA_UPDATE_DIBUJANDO = 8;
+const unsigned short FRAMES_PARA_UPDATE = 15;
+
 protected:
     Vector2 posicion;
     Texture2D tilesheet;
+
 public:
 //Constructor que inicia al jugador en (0,0) o en el (x,y) especificad
     Personaje();
@@ -217,9 +273,9 @@ public:
         this->posicion.x = xInicial;
         this->posicion.y = yInicial;
     }
-    virtual void Update(Tilemap&,const Vector2&,const short&);
-    virtual void Mover(Tilemap&,const unsigned int&); // Update
-    virtual void Dibujar() const; // Draw
+    virtual void Update(Tilemap&,const bool&);
+    virtual void Mover(Tilemap&);
+    virtual void Dibujar() const;
     inline Vector2 GetPosition() const { return posicion; };
     inline void CargaTextura(const char* ruta) {
         tilesheet = LoadTexture(ruta);
@@ -232,12 +288,14 @@ Personaje::Personaje() {
     posicion.y = 0.0f;
 }
 
-void Personaje::Mover(Tilemap &tilemap, const unsigned int &framesCounter)
+void Personaje::Mover(Tilemap &tilemap)
 {
-    if (framesCounter >= FRAMES_PARA_MOVER)// Si pasaron n frames, podemos movernos. Esto para controlar la velocidad de movimiento y no movernos ultra rapido
+    static unsigned short framesCounter = 0;
+    framesCounter++;
+    // Movimiento libre en el modo de "dibujado"
+    if (dibujando)
     {
-        // Movimiento libre en el modo de "dibujado"
-        if (dibujando)
+        if (framesCounter >= FRAMES_PARA_UPDATE_DIBUJANDO) // Si pasaron n frames, podemos movernos. Esto para controlar la velocidad de movimiento y no movernos ultra rapido
         {
             /*
             Si el jugador presiona una direccion, esta en una coordenada valida dentro del mapa,
@@ -252,7 +310,8 @@ void Personaje::Mover(Tilemap &tilemap, const unsigned int &framesCounter)
 
             if (IsKeyDown(KEY_D) && posicion.x < Tilemap::ANCHO - 1 && Tilemap::ObtenerTile(posicion.x + 1, posicion.y, tilemap, false) != Tilemap::TILE_RELLENO && Tilemap::ObtenerTile(posicion.x + 1, posicion.y, tilemap, false) != Tilemap::TILE_LINEA_INCOMPLETA && ultimaDireccion != IZQUIERDA)
             {
-                if (Tilemap::ObtenerTile(posicion.x, posicion.y, tilemap, false) == Tilemap::TILE_VACIO) {
+                if (Tilemap::ObtenerTile(posicion.x, posicion.y, tilemap, false) == Tilemap::TILE_VACIO)
+                {
                     Tilemap::SetTile(3, posicion.x, posicion.y, &tilemap, false);
                     debeHacerFloodFill = true;
                 }
@@ -261,7 +320,8 @@ void Personaje::Mover(Tilemap &tilemap, const unsigned int &framesCounter)
             }
             else if (IsKeyDown(KEY_A) && posicion.x > 0 && Tilemap::ObtenerTile(posicion.x - 1, posicion.y, tilemap, false) != Tilemap::TILE_RELLENO && Tilemap::ObtenerTile(posicion.x - 1, posicion.y, tilemap, false) != Tilemap::TILE_LINEA_INCOMPLETA && ultimaDireccion != DERECHA)
             {
-                if (Tilemap::ObtenerTile(posicion.x, posicion.y, tilemap, false) == Tilemap::TILE_VACIO) {
+                if (Tilemap::ObtenerTile(posicion.x, posicion.y, tilemap, false) == Tilemap::TILE_VACIO)
+                {
                     Tilemap::SetTile(3, posicion.x, posicion.y, &tilemap, false);
                     debeHacerFloodFill = true;
                 }
@@ -271,7 +331,8 @@ void Personaje::Mover(Tilemap &tilemap, const unsigned int &framesCounter)
             // Movimiento vertical
             else if (IsKeyDown(KEY_S) && posicion.y < Tilemap::ALTO_MAPA_JUGABLE - 1 && Tilemap::ObtenerTile(posicion.x, posicion.y + 1, tilemap, false) != Tilemap::TILE_RELLENO && Tilemap::ObtenerTile(posicion.x, posicion.y + 1, tilemap, false) != Tilemap::TILE_LINEA_INCOMPLETA && ultimaDireccion != ARRIBA)
             {
-                if (Tilemap::ObtenerTile(posicion.x, posicion.y, tilemap, false) == Tilemap::TILE_VACIO) {
+                if (Tilemap::ObtenerTile(posicion.x, posicion.y, tilemap, false) == Tilemap::TILE_VACIO)
+                {
                     Tilemap::SetTile(3, posicion.x, posicion.y, &tilemap, false);
                     debeHacerFloodFill = true;
                 }
@@ -280,17 +341,21 @@ void Personaje::Mover(Tilemap &tilemap, const unsigned int &framesCounter)
             }
             else if (IsKeyDown(KEY_W) && posicion.y > 0 && Tilemap::ObtenerTile(posicion.x, posicion.y - 1, tilemap, false) != Tilemap::TILE_RELLENO && Tilemap::ObtenerTile(posicion.x, posicion.y - 1, tilemap, false) != Tilemap::TILE_LINEA_INCOMPLETA && ultimaDireccion != ABAJO)
             {
-                if (Tilemap::ObtenerTile(posicion.x, posicion.y, tilemap, false) == Tilemap::TILE_VACIO) {
+                if (Tilemap::ObtenerTile(posicion.x, posicion.y, tilemap, false) == Tilemap::TILE_VACIO)
+                {
                     Tilemap::SetTile(3, posicion.x, posicion.y, &tilemap, false);
                     debeHacerFloodFill = true;
                 }
                 posicion.y--;
                 ultimaDireccion = ARRIBA;
             }
+            framesCounter = 0;
         }
-
-        // Movimiento solo en bordes
-        else
+    }
+    // Movimiento solo en bordes
+    else
+    {
+        if (framesCounter >= FRAMES_PARA_UPDATE)
         {
             // Movimiento horizontal
             // Si el jugador esta en una coordenada valida dentro del mapa y esta sobre un tile Borde, podemos movernoss
@@ -300,7 +365,8 @@ void Personaje::Mover(Tilemap &tilemap, const unsigned int &framesCounter)
                 if (Tilemap::ObtenerTile(posicion.x + 1, posicion.y, tilemap, false) == Tilemap::TILE_BORDE)
                     posicion.x++;
             }
-            else if (IsKeyDown(KEY_A) && posicion.x > 0){
+            else if (IsKeyDown(KEY_A) && posicion.x > 0)
+            {
                 // Si el espacio de la izquierda es de tipo BORDE podemos desplazarnos hacia el
                 if (Tilemap::ObtenerTile(posicion.x - 1, posicion.y, tilemap, false) == Tilemap::TILE_BORDE)
                     posicion.x--;
@@ -312,56 +378,34 @@ void Personaje::Mover(Tilemap &tilemap, const unsigned int &framesCounter)
                 if (Tilemap::ObtenerTile(posicion.x, posicion.y + 1, tilemap, false) == Tilemap::TILE_BORDE)
                     posicion.y++;
             }
-            else if (IsKeyDown(KEY_W) && posicion.y > 0){
+            else if (IsKeyDown(KEY_W) && posicion.y > 0)
+            {
                 // Si el espacio de la derecha es de tipo BORDE podemos desplazarnos hacia el
                 if (Tilemap::ObtenerTile(posicion.x, posicion.y - 1, tilemap, false) == Tilemap::TILE_BORDE)
                     posicion.y--;
             }
+            framesCounter = 0;
         }
     }
 }
 
-void Personaje::Update(Tilemap &tilemap, const Vector2 &posEnemigo, const short& framesCounter)
+void Personaje::Update(Tilemap &tilemap,const bool& gameOver)
 {
+    // En caso de que ya hayamos llenado los tiles o los enemigos nos mataron, no actualizamos
+    if (gameOver)
+        return;
+
     // Activar el dibujado
     if(IsKeyPressed(KEY_SPACE) && !dibujando){
         dibujando = true;
         posInicioDibujando = posicion;
     }
 
-    Mover(tilemap, framesCounter);
-
-    if (posEnemigo == posicion)
-    {
-        // TODO Logica de muerte
-    }
-
-
-    // Evitamos que si empieza a dibujar en un borde y deja de presionar espacio, haga flood-fill
-  /*  if (Tilemap::ObtenerTile(posicion.x, posicion.y, tilemap, false) == Tilemap::TILE_BORDE && dibujando) {
-        const Vector2 posicionesCercanas[] = {
-                                {posicion.x,posicion.y-1},
-            {posicion.x-1,posicion.y},          {posicion.x+1,posicion.y},
-                                {posicion.x,posicion.y+1}
-        };
-
-        for(const auto& posColindante : posicionesCercanas){
-            if(
-                (posColindante.x == posInicioDibujando.x && posColindante.y == posInicioDibujando.y-1)
-                || (posColindante.x == posInicioDibujando.x-1 && posColindante.y == posInicioDibujando.y-1)
-                || (posColindante.x == posInicioDibujando.x+1 && posColindante.y == posInicioDibujando.y)
-                || (posColindante.x == posInicioDibujando.x && posColindante.y == posInicioDibujando.y+1)
-            ){
-                posInicioDibujando = posicion;
-                break;
-            }
-        }
-    }*/
+    Mover(tilemap);
 
     // Cuando dejamos de dibujar, cambiamos el tile borde temporal por borde solido
-    if (dibujando && Tilemap::ObtenerTile(posicion.x, posicion.y, tilemap, false) == Tilemap::TILE_BORDE && debeHacerFloodFill/*posicion != posInicioDibujando*/)
+    if (dibujando && Tilemap::ObtenerTile(posicion.x, posicion.y, tilemap, false) == Tilemap::TILE_BORDE && debeHacerFloodFill)
     {
-//        tilemap.EndureceBordes();
         dibujando = false;
 
         int contador1 = 0, contador2 = 0;
@@ -384,7 +428,7 @@ void Personaje::Update(Tilemap &tilemap, const Vector2 &posEnemigo, const short&
             }
             else if (contador1 < contador2)
                 tilemap.Fill(Tilemap::TILE_VACIO, 2, {posicion.x + 1, posicion.y - 1}, tilemap);
-            else /*if (contador1 > contador2)*/
+            else
                 tilemap.Fill(Tilemap::TILE_VACIO, 2, {posicion.x + 1, posicion.y + 1}, tilemap);
             break;
         case DERECHA: // En caso de que llegamos a un borde siguiendo la direccion ->
@@ -403,7 +447,7 @@ void Personaje::Update(Tilemap &tilemap, const Vector2 &posEnemigo, const short&
             }
             else if (contador1 < contador2)
                 tilemap.Fill(Tilemap::TILE_VACIO, 2, {posicion.x - 1, posicion.y - 1}, tilemap);
-            else /*if (contador1 > contador2)*/
+            else 
                 tilemap.Fill(Tilemap::TILE_VACIO, 2, {posicion.x - 1, posicion.y + 1}, tilemap);
             break;
         case ARRIBA: // En caso de que llegamos a un borde siguiendo la direccion hacia arriba
@@ -422,7 +466,7 @@ void Personaje::Update(Tilemap &tilemap, const Vector2 &posEnemigo, const short&
             }
             else if (contador1 < contador2)
                 tilemap.Fill(Tilemap::TILE_VACIO, 2, {posicion.x - 1, posicion.y + 1}, tilemap);
-            else /*if (contador1 > contador2)*/
+            else 
                 tilemap.Fill(Tilemap::TILE_VACIO, 2, {posicion.x + 1, posicion.y + 1}, tilemap);
             break;
         case ABAJO: // En caso de que llegamos a un borde siguiendo la direccion hacia abajo
@@ -441,7 +485,7 @@ void Personaje::Update(Tilemap &tilemap, const Vector2 &posEnemigo, const short&
             }
             else if (contador1 < contador2)
                 tilemap.Fill(Tilemap::TILE_VACIO, 2, {posicion.x - 1, posicion.y - 1}, tilemap);
-            else /*if (contador1 > contador2)*/
+            else
                 tilemap.Fill(Tilemap::TILE_VACIO, 2, {posicion.x + 1, posicion.y - 1}, tilemap);
             break;
         }
@@ -454,7 +498,7 @@ void Personaje::Update(Tilemap &tilemap, const Vector2 &posEnemigo, const short&
 
 void Personaje::Dibujar() const
 {
-	// Dibuja coordenadas por ayuda
+	//TODO: Debug Dibuja coordenadas por ayuda
 	char buffer[50];
 	sprintf(buffer, "x= %.0f, y=%.0f", posicion.x, posicion.y);
 	DrawText(buffer, GetScreenWidth() / 2, GetScreenHeight() * 2 / 5, 22, GREEN);
@@ -464,28 +508,27 @@ void Personaje::Dibujar() const
 }
 // ----------------------------------------------------------------------------
 class Enemigo : public Personaje{
+protected:
+const unsigned short FRAMES_PARA_UPDATE = 6;
 public:
     
     Enemigo(const int &, const int &);
-    void Update(const Tilemap&, const short&);
-    void Mover(const short&,const Tilemap&);
+    void Update(const Tilemap&,bool&,const Personaje&);
+    void Mover(const Tilemap&);
     void Dibujar() const override;
 };
 /// @brief Constructor con coordenadas iniciales
 /// @param xInicial Posicion x al spawnear
 /// @param yInicial Posicion 'y' al spawnear
-Enemigo::Enemigo(const int& xInicial,const int& yInicial){
-    posicion.x = xInicial;
-    posicion.y = yInicial;
-}
+Enemigo::Enemigo(const int& xInicial,const int& yInicial) : Personaje(xInicial,yInicial){}
 
 /// @brief Encargada de la logica de movimiento
-/// @param framesCounter Cantidad de frames transcurridos
 /// @param tilemap El tilemap principal
-void Enemigo::Mover(const short& framesCounter,const Tilemap& tilemap)
+void Enemigo::Mover(const Tilemap& tilemap)
 {
-    // Every two seconds (120 frames) a new random value is generated
-    if (framesCounter >= FRAMES_PARA_MOVER /*((framesCounter / 120) % 2) == 1*/)
+    static unsigned short framesCounter = 0;
+    framesCounter++;
+    if (framesCounter >= FRAMES_PARA_UPDATE)
     {
         // Movimiento aleatorio
         int cambioX = GetRandomValue(-1, 1);
@@ -501,22 +544,42 @@ void Enemigo::Mover(const short& framesCounter,const Tilemap& tilemap)
 			posicion.x += static_cast<float>(cambioX);
 			posicion.y += static_cast<float>(cambioY);
 		}
+        framesCounter = 0;
     }
 }
-
-void Enemigo::Update(const Tilemap &tilemap,const short& frameCounter)
+/// @brief Actualizacion cada frame del Enemigo
+/// @param tilemap El tilemap principal
+/// @param gameOver Variable de flujo del juego GameOver
+/// @param pers El jugador
+void Enemigo::Update(const Tilemap &tilemap,bool& gameOver,const Personaje& pers)
 {
-    Mover(frameCounter,tilemap);
+    // En caso de que ya hayamos llenado los tiles o los enemigos nos mataron, no actualizamos
+    if (gameOver)
+        return;
+
+    // Movimiento
+    Mover(tilemap);
+
+    // Si el enemigo esta en un tile de relleno o borde, lo teleportamos a una posicion aleatoria.
+    // Esto para que si el jugador lo encierra, el enemigo siga participando en el juego
     while (Tilemap::ObtenerTile(static_cast<int>(posicion.x), static_cast<int>(posicion.y), tilemap, false) == Tilemap::TILE_RELLENO || Tilemap::ObtenerTile(static_cast<int>(posicion.x), static_cast<int>(posicion.y), tilemap, false) == Tilemap::TILE_BORDE)
     {
         posicion.x = GetRandomValue(1, Tilemap::ANCHO - 1);
         posicion.y = GetRandomValue(1, Tilemap::ALTO_MAPA_JUGABLE - 1);
     }
+
+    // Si el enemigo esta en la misma posicion del jugador, es game over
+    if (this->posicion == pers.GetPosition())
+        gameOver = true;
+    
+    // Si el enemigo esta tocando un borde no-endurecido, es game over
+    if (Tilemap::ObtenerTile(posicion.x, posicion.y, tilemap, false) == Tilemap::TILE_LINEA_INCOMPLETA)
+        gameOver = true;
 }
 
 void Enemigo::Dibujar()const{
 	Rectangle rectSpritePers = { 14.0f * TAMANIO_TILE, 20.0f * TAMANIO_TILE, TAMANIO_TILE, TAMANIO_TILE };
-	DrawTextureRec(tilesheet, rectSpritePers, { posicion.x * TAMANIO_TILE, posicion.y * TAMANIO_TILE }, RED);
+	DrawTextureRec(tilesheet, rectSpritePers, { posicion.x * TAMANIO_TILE, posicion.y * TAMANIO_TILE }, WHITE);
 }
 
 
@@ -529,13 +592,14 @@ int main(void)
 	const int screenWidth = 800;
 	const int screenHeight = 480;
 
-    short framesCounter = 0;
-
+    
+    bool gameOver = false;
+    bool victoria = false;
 	Personaje pers;
 	Tilemap tmap;
     Enemigo enemigo(3,5);
 
-	InitWindow(screenWidth, screenHeight, "apoco si tilin QIX");
+	InitWindow(screenWidth, screenHeight, "QIX Sebastian L.");
 
 	SetTargetFPS(60); // Set our game to run at 60 frames-per-second
 	//--------------------------------------------------------------------------------------
@@ -555,18 +619,11 @@ int main(void)
 		// TODO: Update your variables here
 		//----------------------------------------------------------------------------------
 
-        framesCounter++;
-
-        pers.Update(tmap,enemigo.GetPosition(),framesCounter);
-        enemigo.Update(tmap,framesCounter);
+        pers.Update(tmap,gameOver);
+        enemigo.Update(tmap,gameOver,pers);
         
-        // Al transcurrir cierto tiempo, reiniciamos el contador
-        if (framesCounter >= FRAMES_PARA_MOVER){
-            framesCounter = 0;
-        }
-
-
-
+        // Revisamos el porcentaje de mapa dibujado para el fin del juego
+        tmap.RevisaMapa(gameOver,victoria);
 
         // Draw
 		//----------------------------------------------------------------------------------
@@ -578,7 +635,15 @@ int main(void)
 		pers.Dibujar();
         enemigo.Dibujar();
 
-		EndDrawing();
+        
+        // Pantalla de victoria/derrota
+        if (victoria && gameOver)
+            DrawText("Felicidades. GANASTE", 20, 400, 50, GOLD);
+        else if (!victoria && gameOver)
+            DrawText("Perdiste. Intentalo de nuevo :(", 20, 400, 50, GOLD);
+
+
+        EndDrawing();
 		//----------------------------------------------------------------------------------
 	}
 
